@@ -1,10 +1,11 @@
 import { Injectable, signal } from '@angular/core';
+import { ListStore } from '../model/listStore.model';
 import { Student } from '../model/student.model';
 
 @Injectable({
   providedIn: 'root',
 })
-export class StudentStore {
+export class StudentStore implements ListStore<Student, number> {
   public students = signal<Student[]>([]);
 
   addAll(students: Student[]) {

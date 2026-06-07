@@ -1,39 +1,35 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  inject,
+  computed,
   input,
+  output,
 } from '@angular/core';
-import { StudentStore } from '../../data-access/student.store';
-import { TeacherStore } from '../../data-access/teacher.store';
-import { CardType } from '../../model/card.model';
+import { HasId } from '../../model/common.model';
 
 @Component({
   selector: 'app-list-item',
   template: `
     <div class="flex justify-between border border-gray-300 px-2 py-1">
-      {{ name() }}
-      <button (click)="delete(id())">
+      {{ itemLabel() }}
+      <button (click)="deleteItemClicked.emit(item().id)">
         <img class="h-5" src="assets/svg/trash.svg" alt="trash" />
       </button>
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ListItemComponent {
-  private teacherStore = inject(TeacherStore);
-  private studentStore = inject(StudentStore);
+export class ListItemComponent<
+  T extends HasId<TId>,
+  TId extends number | string,
+> {
+  public readonly deleteItemClicked = output<TId>();
 
-  readonly id = input.required<number>();
-  readonly name = input.required<string>();
-  readonly type = input.required<CardType>();
-
-  delete(id: number) {
-    const type = this.type();
-    if (type === CardType.TEACHER) {
-      this.teacherStore.deleteOne(id);
-    } else if (type === CardType.STUDENT) {
-      this.studentStore.deleteOne(id);
-    }
-  }
+  public readonly item = input.required<T>();
+  public readonly getItemLabel = input.required<(item: T) => string>();
+  public readonly itemLabel = computed(() => {
+    const item = this.item();
+    const getItemLabel = this.getItemLabel();
+    return getItemLabel(item);
+  });
 }

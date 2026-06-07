@@ -1,49 +1,45 @@
-import { HttpClient } from '@angular/common/http';
-import { Component, inject, OnInit } from '@angular/core';
-import { randText } from '@ngneat/falso';
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { BusyService } from './core/busy.service';
+import { TodoComponent } from './features/todos/todo.component';
 
 @Component({
-  imports: [],
+  imports: [TodoComponent, MatProgressSpinnerModule],
   selector: 'app-root',
   template: `
-    @for (todo of todos; track todo.id) {
-      {{ todo.title }}
-      <button (click)="update(todo)">Update</button>
+    @if (anythingBusy()) {
+      <mat-progress-spinner mode="indeterminate" diameter="20" />
     }
+    <app-todo />
   `,
-  styles: [],
+  styles: [
+    `
+      :host {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: center;
+        justify-content: center;
+        background-color: peachpuff;
+      }
+      mat-progress-spinner {
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        z-index: 10;
+      }
+    `,
+  ],
 })
 export class AppComponent implements OnInit {
-  private http = inject(HttpClient);
+  private busyService = inject(BusyService);
 
-  todos!: any[];
+  public anythingBusy = signal(false);
 
-  ngOnInit(): void {
-    this.http
-      .get<any[]>('https://jsonplaceholder.typicode.com/todos')
-      .subscribe((todos) => {
-        this.todos = todos;
-      });
-  }
-
-  update(todo: any) {
-    this.http
-      .put<any>(
-        `https://jsonplaceholder.typicode.com/todos/${todo.id}`,
-        JSON.stringify({
-          todo: todo.id,
-          title: randText(),
-          body: todo.body,
-          userId: todo.userId,
-        }),
-        {
-          headers: {
-            'Content-type': 'application/json; charset=UTF-8',
-          },
-        },
-      )
-      .subscribe((todoUpdated: any) => {
-        this.todos[todoUpdated.id - 1] = todoUpdated;
-      });
+  public ngOnInit(): void {
+    this.busyService.anythingBusy$.subscribe((busy) => {
+      this.anythingBusy.set(busy);
+    });
   }
 }
