@@ -1,23 +1,43 @@
-import {
-  Component,
-  inject,
-  OnInit,
-  signal,
-  WritableSignal,
-} from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { randText } from '@ngneat/falso';
-import { TodoApiService } from './todoApi.service';
+import {
+  DeleteError,
+  UpdateError,
+  WithError,
+} from '../../common/WithError.type';
+import { TodoStore } from './todo.store';
 import { Todo } from './todos.model';
 
 @Component({
-  imports: [],
+  imports: [MatProgressSpinnerModule],
   selector: 'app-todo',
   template: `
-    @for (todo of todos(); track todo.id) {
+    @if (todoStore.isLoading()) {
+      <mat-progress-spinner mode="indeterminate" diameter="60" color="accent" />
+    }
+    @if (todoStore.error()) {
+      <div class="error-message">
+        Something went wrong: {{ todoStore.error()?.message }}
+        <button (click)="todoStore.fetchTodos()">retry</button>
+      </div>
+    }
+    @for (todo of todoStore.todos(); track todo.id) {
       <div class="todo-item">
         <span>{{ todo.title }}</span>
-        <button (click)="update(todo)">Update</button>
-        <button (click)="delete(todo)">Delete</button>
+
+        @if (hasDeleteError(todo)) {
+          <span class="error-message small">Delete failed.</span>
+        }
+        @if (hasUpdateError(todo)) {
+          <span class="error-message small">Update failed.</span>
+          <button (click)="retryUpdate(todo)">Retry</button>
+        } @else {
+          <button (click)="update(todo)">Update</button>
+        }
+        <button (click)="delete(todo)">
+          {{ hasDeleteError(todo) ? 'Retry' : 'Delete' }}
+        </button>
       </div>
     }
   `,
@@ -56,37 +76,64 @@ import { Todo } from './todos.model';
           }
         }
       }
+      mat-progress-spinner {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        z-index: 10;
+      }
+      .error-message {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid red;
+        border-radius: 4px;
+        &.small {
+          font-size: 12px;
+          padding: 2px;
+        }
+      }
     `,
   ],
+  providers: [TodoStore],
 })
 export class TodoComponent implements OnInit {
-  private todoApiService = inject(TodoApiService);
-
-  public todos: WritableSignal<Todo[]> = signal<Todo[]>([]);
+  public todoStore = inject(TodoStore);
 
   ngOnInit(): void {
-    this.todoApiService.getTodos().subscribe((todos) => this.todos.set(todos));
+    console.log('ngOnInit');
+    this.todoStore.fetchTodos();
   }
 
-  update(todo: Todo) {
+  public retry() {
+    this.todoStore.fetchTodos();
+  }
+
+  public update(todo: Todo) {
     todo = {
       ...todo,
       title: randText(),
     };
-    this.todoApiService.updateTodo(todo).subscribe((updatedTodo: Todo) => {
-      this.todos.update((lastTodos: Todo[]) =>
-        lastTodos.map((todo) =>
-          todo.id === updatedTodo.id ? updatedTodo : todo,
-        ),
-      );
-    });
+
+    this.todoStore.updateTodo(todo);
   }
 
-  delete(todo: Todo) {
-    this.todoApiService.deleteTodo(todo).subscribe(() => {
-      this.todos.update((lastTodos: Todo[]) =>
-        lastTodos.filter((t) => t.id !== todo.id),
-      );
-    });
+  public retryUpdate(todo: Todo) {
+    this.todoStore.updateTodo(todo);
+  }
+
+  public delete(todo: Todo) {
+    this.todoStore.deleteTodo(todo);
+  }
+
+  public hasUpdateError(todo: WithError<Todo>): boolean {
+    return todo.error instanceof UpdateError;
+  }
+
+  public hasDeleteError(todo: WithError<Todo>): boolean {
+    return todo.error instanceof DeleteError;
   }
 }

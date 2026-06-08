@@ -7,7 +7,12 @@ import {
   withProps,
   withState,
 } from '@ngrx/signals';
-import { WithError } from '../../common/WithError.type';
+import { catchError, map, of } from 'rxjs';
+import {
+  DeleteError,
+  UpdateError,
+  WithError,
+} from '../../common/WithError.type';
 import { TodoApiService } from './todoApi.service';
 import { Todo } from './todos.model';
 
@@ -33,12 +38,14 @@ export const TodoStore = signalStore(
     isLoading: computed(() => !!loadingUids().size),
   })),
   withMethods((store) => ({
-    registerLoading: (uid: string) => {
+    registerLoading: () => {
+      const uid = getUid();
       patchState(store, ({ loadingUids }) => {
         return {
           loadingUids: new Set(loadingUids).add(uid),
         };
       });
+      return uid;
     },
     unregisterLoading: (uid: string) => {
       patchState(store, ({ loadingUids }) => {
@@ -47,40 +54,86 @@ export const TodoStore = signalStore(
           loadingUids: new Set(loadingUids),
         };
       });
+    },
+    resetError: () => {
+      patchState(store, () => ({ error: null }));
     },
   })),
   withMethods((store) => ({
-    registerLoading: (uid: string) => {
-      patchState(store, ({ loadingUids }) => {
-        return {
-          loadingUids: new Set(loadingUids).add(uid),
-        };
-      });
-    },
-    unregisterLoading: (uid: string) => {
-      patchState(store, ({ loadingUids }) => {
-        loadingUids.delete(uid);
-        return {
-          loadingUids: new Set(loadingUids),
-        };
-      });
-    },
     fetchTodos: () => {
-      const uid = getUid();
-
-      store.registerLoading(uid);
-
-      store.todoApiService.getTodos().subscribe((fetchedTodos: Todo[]) => {
-        const todos = fetchedTodos.map((todo) => ({ ...todo, error: null }));
-        patchState(store, ({ loadingUids }) => {
-          loadingUids.delete(uid);
-          return {
-            todos,
-            loadingUids: new Set(loadingUids),
-          };
+      const uid = store.registerLoading();
+      store.resetError();
+      store.todoApiService
+        .getTodos()
+        .pipe(
+          catchError((error) => {
+            store.unregisterLoading(uid);
+            patchState(store, () => ({ todos: [], error: error }));
+            throw error;
+          }),
+        )
+        .subscribe((fetchedTodos: Todo[]) => {
+          const fetchedTodosWithError: WithError<Todo>[] = fetchedTodos.map(
+            (todo) => ({ ...todo, error: null }),
+          );
+          store.unregisterLoading(uid);
+          patchState(store, () => ({
+            error: null,
+            todos: fetchedTodosWithError,
+          }));
         });
-      });
     },
-    updateTodo: (todo: Todo) => {},
+    updateTodo: (updatedTodo: Todo) => {
+      const uid = store.registerLoading();
+
+      store.todoApiService
+        .updateTodo(updatedTodo)
+        .pipe(
+          map((updatedTodoFromBackend: Todo) => ({
+            ...updatedTodoFromBackend,
+            error: null,
+          })),
+          catchError((error) => {
+            return of({ ...updatedTodo, error: new UpdateError(error) });
+          }),
+        )
+        .subscribe((updatedTodoFromBackend: WithError<Todo>) => {
+          store.unregisterLoading(uid);
+          patchState(store, ({ todos }) => {
+            return {
+              todos: todos.map((t) =>
+                t.id === updatedTodoFromBackend.id ? updatedTodoFromBackend : t,
+              ),
+            };
+          });
+        });
+    },
+    deleteTodo: (todo: Todo) => {
+      const uid = store.registerLoading();
+
+      store.todoApiService
+        .deleteTodo(todo)
+        .pipe(
+          map(() => ({ ...todo, error: null })),
+          catchError((error) => {
+            return of({ ...todo, error: new DeleteError(error) });
+          }),
+        )
+        .subscribe((deletedTodoFromBackend: WithError<Todo>) => {
+          store.unregisterLoading(uid);
+
+          patchState(store, ({ todos }) => {
+            const nextTodos = deletedTodoFromBackend.error
+              ? todos.map((t) =>
+                  t.id === deletedTodoFromBackend.id
+                    ? deletedTodoFromBackend
+                    : t,
+                )
+              : todos.filter((t) => t.id !== deletedTodoFromBackend.id);
+
+            return { todos: nextTodos };
+          });
+        });
+    },
   })),
 );

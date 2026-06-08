@@ -15,6 +15,7 @@ import { TodoComponent } from './features/todos/todo.component';
   styles: [
     `
       :host {
+        min-height: 100vh;
         padding: 20px;
         display: flex;
         flex-direction: column;
